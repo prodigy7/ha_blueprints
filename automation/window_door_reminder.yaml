@@ -1,0 +1,825 @@
+blueprint:
+  name: Window & Door Reminder
+  description: >-
+    Reminds you per window/door when it has been left open too long. Every contact
+    carrying the chosen label is monitored (the label may sit on the entity or on its device).
+
+
+    - Fixed wait time before the first reminder; no reminders above the limit temperature (unless rain is forecast)
+
+    - Announcement on the Alexa in the same area as the sensor, optional extra devices
+
+    - Push with buttons (snooze, pause, pause all - each optional), cleared when the window is closed
+
+    - Escalation after several reminders
+
+    - Quiet period: Alexa speaks quietly, push is silent
+
+    - Immediate alerts for rain/storm, when leaving home and for unreachable sensors
+
+    - All spoken/pushed texts are configurable. Placeholders: {name} {minutes} {open} {reason} {unreachable}.
+      Do not use Jinja ({{ }}) inside the text fields.
+
+
+    Resetting the "mute" switch once everything is closed is NOT done here, because several
+    automations from this blueprint may share the same switch. Use a separate automation for that.
+  domain: automation
+  author: Manuel Bernhardt
+  source_url: https://github.com/prodigy7/ha_blueprints/blob/main/automation/window_door_reminder.yaml
+  homeassistant:
+    min_version: "2026.7.0"
+  input:
+    sensors:
+      name: Sensors
+      icon: mdi:window-open-variant
+      input:
+        sensor_label:
+          name: Label
+          description: Every window/door contact with this label is monitored (label on the entity or on its device).
+          selector:
+            label: {}
+    recipients:
+      name: Recipients
+      icon: mdi:account-multiple
+      input:
+        mobile_devices:
+          name: Phones / tablets
+          description: Home Assistant app devices that receive the push notification.
+          default: []
+          selector:
+            device:
+              filter:
+                - integration: mobile_app
+              multiple: true
+        alexa_in_room:
+          name: Alexa in the sensor's area
+          description: Announce on the Alexa that is assigned to the same area as the sensor.
+          default: true
+          selector:
+            boolean: {}
+        alexa_mode:
+          name: Alexa output type
+          default: announce
+          selector:
+            select:
+              options:
+                - label: Announce (with chime)
+                  value: announce
+                - label: Speak (no chime)
+                  value: speak
+        extra_outputs:
+          name: Additional voice outputs
+          description: Extra Alexa notify entities that always speak as well.
+          default: []
+          selector:
+            entity:
+              filter:
+                - domain: notify
+                  integration: alexa_devices
+              multiple: true
+    timing:
+      name: Wait times & temperature
+      icon: mdi:thermometer
+      input:
+        weather:
+          name: Weather
+          description: Provides outside temperature, wind and rain forecast.
+          selector:
+            entity:
+              filter:
+                - domain: weather
+        limit_temperature:
+          name: Limit temperature
+          description: At or above this outside temperature there are no reminders (unless rain is forecast).
+          default: 16
+          selector:
+            number:
+              min: -10
+              max: 35
+              step: 0.5
+              unit_of_measurement: °C
+        first_wait:
+          name: Wait before the first reminder
+          description: Fixed time a window/door may stay open before the first reminder (independent of temperature).
+          default: 10
+          selector:
+            number:
+              min: 1
+              max: 180
+              unit_of_measurement: min
+        repeat_interval:
+          name: Repeat interval
+          description: Time between reminders.
+          default: 5
+          selector:
+            number:
+              min: 1
+              max: 120
+              unit_of_measurement: min
+        snooze_minutes:
+          name: "Button: remind me later"
+          description: Pause length of the snooze button.
+          default: 15
+          selector:
+            number:
+              min: 5
+              max: 240
+              unit_of_measurement: min
+    escalation:
+      name: Escalation
+      icon: mdi:alarm-light
+      collapsed: true
+      input:
+        escalate_from:
+          name: Escalate from reminder no.
+          description: 0 = no escalation.
+          default: 3
+          selector:
+            number:
+              min: 0
+              max: 20
+        escalation_devices:
+          name: Additional phones on escalation
+          default: []
+          selector:
+            device:
+              filter:
+                - integration: mobile_app
+              multiple: true
+        escalation_outputs:
+          name: Additional voice outputs on escalation
+          default: []
+          selector:
+            entity:
+              filter:
+                - domain: notify
+                  integration: alexa_devices
+              multiple: true
+    quiet:
+      name: Quiet period & muting
+      icon: mdi:bell-sleep
+      collapsed: true
+      input:
+        quiet_schedule:
+          name: Quiet period (schedule)
+          description: While the schedule is on, Alexa speaks quietly and push notifications are silent.
+          default: ""
+          selector:
+            entity:
+              filter:
+                - domain: schedule
+        quiet_volume:
+          name: Alexa volume during the quiet period
+          default: 20
+          selector:
+            number:
+              min: 5
+              max: 100
+              unit_of_measurement: "%"
+        mute_switch:
+          name: Switch "mute until everything is closed"
+          description: While on, there are no reminders. Switching it off again must be done by a separate automation.
+          default: ""
+          selector:
+            entity:
+              filter:
+                - domain: input_boolean
+        pause_button:
+          name: Show button "Pause" in the push notification
+          description: Pauses reminders for this one window/door until it is closed.
+          default: false
+          selector:
+            boolean: {}
+        pause_all_button:
+          name: Show button "Pause all" in the push notification
+          description: Turns on the mute switch. The button is never shown without a mute switch.
+          default: false
+          selector:
+            boolean: {}
+    extras:
+      name: Immediate alerts & misc
+      icon: mdi:weather-pouring
+      collapsed: true
+      input:
+        weather_warning:
+          name: Rain/storm warning
+          default: true
+          selector:
+            boolean: {}
+        wind_limit:
+          name: Storm from wind speed
+          default: 50
+          selector:
+            number:
+              min: 10
+              max: 150
+              unit_of_measurement: km/h
+        rain_probability:
+          name: Rain counts as forecast from probability (next 2 hours)
+          description: Used when the weather service provides a rain probability. Otherwise forecast precipitation or rainy conditions count.
+          default: 60
+          selector:
+            number:
+              min: 10
+              max: 100
+              unit_of_measurement: "%"
+        leaving_warning:
+          name: Warning when leaving home
+          default: true
+          selector:
+            boolean: {}
+        home_zone:
+          name: Zone
+          default: zone.home
+          selector:
+            entity:
+              filter:
+                - domain: zone
+        offline_warning:
+          name: Warning for unreachable sensors
+          default: true
+          selector:
+            boolean: {}
+        offline_minutes:
+          name: Unreachable for
+          default: 30
+          selector:
+            number:
+              min: 5
+              max: 1440
+              unit_of_measurement: min
+        dashboard_url:
+          name: Target when tapping the push notification
+          description: e.g. /dashboard-home/start#open
+          default: ""
+          selector:
+            text: {}
+    texts:
+      name: Message texts
+      icon: mdi:message-text
+      collapsed: true
+      input:
+        title_open:
+          name: Reminder - title
+          description: "Placeholders: {name} {minutes}"
+          default: "{name}: Open"
+          selector:
+            text: {}
+        text_open:
+          name: Reminder - push text
+          description: "Placeholders: {name} {minutes}"
+          default: "{name} has been open for {minutes} minutes. Please close it."
+          selector:
+            text: {}
+        text_rain_suffix:
+          name: Reminder - suffix when rain is forecast
+          description: Appended to the push text.
+          default: " Rain is forecast."
+          selector:
+            text: {}
+        voice_open:
+          name: Reminder - voice text
+          description: "Placeholders: {name} {minutes}"
+          default: "{name} is open. Please close it."
+          selector:
+            text: {}
+        button_snooze:
+          name: Button - snooze
+          description: "Placeholder: {minutes} (= snooze time)"
+          default: "Remind me in {minutes} min"
+          selector:
+            text: {}
+        button_pause:
+          name: Button - pause
+          default: Pause
+          selector:
+            text: {}
+        button_pause_all:
+          name: Button - pause all
+          default: Pause all
+          selector:
+            text: {}
+        word_rain:
+          name: Word for rain
+          description: Used for {reason}.
+          default: Rain
+          selector:
+            text: {}
+        word_storm:
+          name: Word for storm
+          description: Used for {reason}.
+          default: Storm
+          selector:
+            text: {}
+        title_weather:
+          name: Rain/storm - title
+          description: "Placeholders: {reason} {open}"
+          default: "{reason} - window open"
+          selector:
+            text: {}
+        text_weather:
+          name: Rain/storm - push text
+          description: "Placeholders: {reason} {open}"
+          default: "Still open: {open}"
+          selector:
+            text: {}
+        voice_weather:
+          name: Rain/storm - voice text
+          description: "Placeholders: {reason} {open}"
+          default: "Attention, {reason}. Still open: {open}."
+          selector:
+            text: {}
+        title_leaving:
+          name: Leaving home - title
+          description: "Placeholder: {open}"
+          default: Nobody home - still open
+          selector:
+            text: {}
+        text_leaving:
+          name: Leaving home - text
+          description: "Placeholder: {open}"
+          default: "{open}"
+          selector:
+            text: {}
+        title_offline:
+          name: Unreachable sensor - title
+          description: "Placeholder: {unreachable}"
+          default: Window sensor unreachable
+          selector:
+            text: {}
+        text_offline:
+          name: Unreachable sensor - text
+          description: "Placeholder: {unreachable}"
+          default: "No signal from: {unreachable}. Whether open or closed is unknown."
+          selector:
+            text: {}
+        channel_normal:
+          name: Android channel - normal
+          default: Window warning
+          selector:
+            text: {}
+        channel_quiet:
+          name: Android channel - quiet
+          default: Window warning (quiet)
+          selector:
+            text: {}
+        channel_urgent:
+          name: Android channel - urgent
+          default: Window warning (urgent)
+          selector:
+            text: {}
+
+mode: parallel
+max: 40
+max_exceeded: silent
+
+trigger_variables:
+  t_label: !input sensor_label
+
+triggers:
+  - id: open
+    trigger: window.opened
+    target:
+      label_id: !input sensor_label
+  - id: open
+    trigger: door.opened
+    target:
+      label_id: !input sensor_label
+  - id: closed
+    trigger: window.closed
+    target:
+      label_id: !input sensor_label
+  - id: closed
+    trigger: door.closed
+    target:
+      label_id: !input sensor_label
+  - id: restart
+    trigger: homeassistant
+    event: start
+  - id: resume
+    trigger: event
+    event_type: window_warning_resume
+  - id: pause_all
+    trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: WINDOW_WARNING_PAUSE_ALL
+    enabled: !input pause_all_button
+  - id: weather
+    trigger: state
+    entity_id: !input weather
+    to:
+      - rainy
+      - pouring
+      - lightning
+      - lightning-rainy
+      - hail
+      - snowy-rainy
+    enabled: !input weather_warning
+  - id: weather
+    trigger: numeric_state
+    entity_id: !input weather
+    attribute: wind_speed
+    above: !input wind_limit
+    enabled: !input weather_warning
+  - id: leaving
+    trigger: numeric_state
+    entity_id: !input home_zone
+    below: 1
+    enabled: !input leaving_warning
+  - id: offline
+    trigger: template
+    value_template: >-
+      {% set ns = namespace(l=label_entities(t_label)) %}
+      {% for d in label_devices(t_label) %}{% set ns.l = ns.l + device_entities(d) %}{% endfor %}
+      {{ ns.l | unique | select('match', 'binary_sensor\.')
+         | select('is_state', 'unavailable') | list | count > 0 }}
+    for:
+      minutes: !input offline_minutes
+    enabled: !input offline_warning
+
+variables:
+  label: !input sensor_label
+  mobile_devices: !input mobile_devices
+  alexa_in_room: !input alexa_in_room
+  alexa_mode: !input alexa_mode
+  extra_outputs: !input extra_outputs
+  weather: !input weather
+  limit_temperature: !input limit_temperature
+  first_wait: !input first_wait
+  repeat_interval: !input repeat_interval
+  snooze_minutes: !input snooze_minutes
+  escalate_from: !input escalate_from
+  escalation_devices: !input escalation_devices
+  escalation_outputs: !input escalation_outputs
+  quiet_schedule: !input quiet_schedule
+  quiet_volume: !input quiet_volume
+  mute_switch: !input mute_switch
+  pause_button: !input pause_button
+  pause_all_button: !input pause_all_button
+  rain_probability: !input rain_probability
+  dashboard_url: !input dashboard_url
+  title_open: !input title_open
+  text_open: !input text_open
+  text_rain_suffix: !input text_rain_suffix
+  voice_open: !input voice_open
+  button_snooze: !input button_snooze
+  button_pause: !input button_pause
+  button_pause_all: !input button_pause_all
+  word_rain: !input word_rain
+  word_storm: !input word_storm
+  title_weather: !input title_weather
+  text_weather: !input text_weather
+  voice_weather: !input voice_weather
+  title_leaving: !input title_leaving
+  text_leaving: !input text_leaving
+  title_offline: !input title_offline
+  text_offline: !input text_offline
+  channel_normal: !input channel_normal
+  channel_quiet: !input channel_quiet
+  channel_urgent: !input channel_urgent
+  # Push services of the selected app devices (the name comes from the app, not from renaming in HA)
+  push_services: >-
+    {% set ns = namespace(l=[]) %}
+    {% for d in mobile_devices %}{% set n = device_attr(d, 'name') %}
+    {% if n %}{% set ns.l = ns.l + ['notify.mobile_app_' ~ (n | slugify)] %}{% endif %}{% endfor %}
+    {{ ns.l }}
+  escalation_services: >-
+    {% set ns = namespace(l=[]) %}
+    {% for d in escalation_devices %}{% set n = device_attr(d, 'name') %}
+    {% if n %}{% set ns.l = ns.l + ['notify.mobile_app_' ~ (n | slugify)] %}{% endif %}{% endfor %}
+    {{ ns.l }}
+  quiet_active: "{{ quiet_schedule not in [none, ''] and is_state(quiet_schedule, 'on') }}"
+  # The label may sit on the entity OR on its device; only window/door contacts (no battery sensors)
+  sensors: >-
+    {% set ns = namespace(l=label_entities(label)) %}
+    {% for d in label_devices(label) %}{% set ns.l = ns.l + device_entities(d) %}{% endfor %}
+    {% set out = namespace(l=[]) %}
+    {% for e in ns.l | unique if e.startswith('binary_sensor.')
+       and (state_attr(e, 'device_class') in ['window', 'door', 'opening', 'garage_door']
+            or (is_state(e, 'unavailable') and not (e | regex_search('batter|sabot|duty|low')))) %}
+      {% set out.l = out.l + [e] %}
+    {% endfor %}
+    {{ out.l }}
+  open_sensors: "{{ sensors | select('is_state', 'on') | list }}"
+  open_names: "{{ open_sensors | map('state_attr', 'friendly_name') | join(', ') }}"
+  alexa_entities: "{{ integration_entities('alexa_devices') }}"
+
+actions:
+  - choose:
+      # ------------------------------------------------------------------
+      # Window/door opened (or resumed after a restart)
+      # ------------------------------------------------------------------
+      - alias: Reminder per window/door
+        conditions:
+          - condition: trigger
+            id: [open, resume]
+          - "{{ trigger.id == 'open' or trigger.event.data.automation == this.entity_id }}"
+        sequence:
+          - variables:
+              ent: "{{ (trigger.entity_id | default(trigger.to_state.entity_id)) if trigger.id == 'open' else trigger.event.data.entity_id }}"
+          - condition: template
+            value_template: "{{ ent in sensors and is_state(ent, 'on') }}"
+          - variables:
+              name: "{{ state_attr(ent, 'friendly_name') or ent }}"
+              opened_at: "{{ states[ent].last_changed | string }}"
+              tag: "window_warning_{{ ent.split('.')[1] }}"
+              area: "{{ area_id(ent) }}"
+              room_outputs: >-
+                {% if alexa_in_room and area %}
+                  {% set l = area_entities(area) | select('in', alexa_entities) | select('match', 'notify\.') | list %}
+                  {% if alexa_mode == 'speak' %}{{ l | select('search', 'sprech|speak') | list }}
+                  {% else %}{{ l | reject('search', 'sprech|speak') | list }}{% endif %}
+                {% else %}[]{% endif %}
+          - alias: Rain forecast for the next 2 hours?
+            action: weather.get_forecasts
+            target:
+              entity_id: "{{ weather }}"
+            data:
+              type: hourly
+            response_variable: forecast_data
+            continue_on_error: true
+          - variables:
+              rain_expected: >-
+                {% set f = (forecast_data[weather].forecast if forecast_data is defined and weather in forecast_data else []) %}
+                {% set n = namespace(r=false) %}
+                {% for x in f[:3] %}
+                  {% if x.precipitation_probability is defined and x.precipitation_probability is not none %}
+                    {% if x.precipitation_probability >= rain_probability | float %}{% set n.r = true %}{% endif %}
+                  {% elif (x.precipitation | default(0, true) | float(0)) >= 0.1
+                       or x.condition in ['rainy', 'pouring', 'lightning-rainy', 'hail', 'snowy-rainy'] %}{% set n.r = true %}{% endif %}
+                {% endfor %}
+                {{ n.r }}
+          - alias: Wait until the wait time is over or it gets closed
+            wait_template: "{{ not is_state(ent, 'on') or (states[ent].last_changed | string) != opened_at }}"
+            timeout: "{{ (first_wait | float * 60) | int }}"
+            continue_on_timeout: true
+          - repeat:
+              while:
+                - "{{ is_state(ent, 'on') and (states[ent].last_changed | string) == opened_at }}"
+              sequence:
+                - variables:
+                    temperature: "{{ state_attr(weather, 'temperature') | float(none) }}"
+                    too_warm: "{{ temperature is not none and temperature >= limit_temperature and not rain_expected }}"
+                    muted: "{{ mute_switch not in [none, ''] and is_state(mute_switch, 'on') }}"
+                    quiet_active: "{{ quiet_schedule not in [none, ''] and is_state(quiet_schedule, 'on') }}"
+                - if:
+                    - "{{ not too_warm and not muted }}"
+                  then:
+                    - variables:
+                        escalated: "{{ escalate_from | int > 0 and repeat.index >= escalate_from | int }}"
+                        minutes_open: "{{ ((now() - as_datetime(opened_at)).total_seconds() / 60) | round(0) | int }}"
+                        push_title: "{{ title_open | replace('{name}', name) | replace('{minutes}', minutes_open | string) }}"
+                        push_text: >-
+                          {{ text_open | replace('{name}', name) | replace('{minutes}', minutes_open | string) }}{{ text_rain_suffix if rain_expected else '' }}
+                        voice_text: "{{ voice_open | replace('{name}', name) | replace('{minutes}', minutes_open | string) }}"
+                        services: "{{ push_services + (escalation_services if escalated else []) }}"
+                        outputs: "{{ (room_outputs + extra_outputs + (escalation_outputs if escalated else [])) | unique | list }}"
+                        push_data:
+                          tag: "{{ tag }}"
+                          group: window_warning
+                          color: "{{ '#d32f2f' if escalated else '#ff9800' }}"
+                          notification_icon: mdi:window-open-variant
+                          clickAction: "{{ dashboard_url }}"
+                          url: "{{ dashboard_url }}"
+                          channel: "{{ channel_quiet if quiet_active else (channel_urgent if escalated else channel_normal) }}"
+                          importance: "{{ 'low' if quiet_active else 'high' }}"
+                          priority: high
+                          ttl: 0
+                          alert_once: false
+                          push:
+                            interruption-level: "{{ 'passive' if quiet_active else ('time-sensitive' if escalated else 'active') }}"
+                            sound: "{{ 'none' if quiet_active else 'default' }}"
+                          actions: >-
+                            {% set ns = namespace(l=[{'action': 'WINDOW_WARNING_SNOOZE_' ~ ent, 'title': button_snooze | replace('{minutes}', snooze_minutes | int | string)}]) %}
+                            {% if pause_button %}{% set ns.l = ns.l + [{'action': 'WINDOW_WARNING_PAUSE_' ~ ent, 'title': button_pause}] %}{% endif %}
+                            {% if pause_all_button and mute_switch not in [none, ''] %}{% set ns.l = ns.l + [{'action': 'WINDOW_WARNING_PAUSE_ALL', 'title': button_pause_all}] %}{% endif %}
+                            {{ ns.l }}
+                    - parallel:
+                        - alias: Push notifications
+                          repeat:
+                            for_each: "{{ services }}"
+                            sequence:
+                              - action: "{{ repeat.item }}"
+                                data:
+                                  title: "{{ push_title }}"
+                                  message: "{{ push_text }}"
+                                  data: "{{ push_data }}"
+                                continue_on_error: true
+                        - alias: Voice output
+                          if:
+                            - "{{ outputs | count > 0 }}"
+                          then:
+                            - variables:
+                                players: >-
+                                  {% set ns = namespace(l=[]) %}
+                                  {% for a in outputs %}{% for e in device_entities(device_id(a)) if e.startswith('media_player.') %}
+                                  {% set ns.l = ns.l + [e] %}{% endfor %}{% endfor %}
+                                  {{ ns.l | unique | list }}
+                                old_volumes: >-
+                                  {% set ns = namespace(l=[]) %}
+                                  {% for p in players %}{% set ns.l = ns.l + [(p, state_attr(p, 'volume_level'))] %}{% endfor %}
+                                  {{ dict(ns.l) }}
+                            - if:
+                                - "{{ quiet_active and players | count > 0 }}"
+                              then:
+                                - action: media_player.volume_set
+                                  target:
+                                    entity_id: "{{ players }}"
+                                  data:
+                                    volume_level: "{{ quiet_volume / 100 }}"
+                                  continue_on_error: true
+                                - delay: 2
+                            - action: notify.send_message
+                              target:
+                                entity_id: "{{ outputs }}"
+                              data:
+                                message: "{{ voice_text }}"
+                              continue_on_error: true
+                            - if:
+                                - "{{ quiet_active and players | count > 0 }}"
+                              then:
+                                - delay: 10
+                                - repeat:
+                                    for_each: "{{ players | select('in', old_volumes | list) | list }}"
+                                    sequence:
+                                      - if:
+                                          - "{{ old_volumes[repeat.item] is not none }}"
+                                        then:
+                                          - action: media_player.volume_set
+                                            target:
+                                              entity_id: "{{ repeat.item }}"
+                                            data:
+                                              volume_level: "{{ old_volumes[repeat.item] }}"
+                                            continue_on_error: true
+                - alias: Wait for the next reminder - or for a button
+                  wait_for_trigger:
+                    - trigger: event
+                      event_type: mobile_app_notification_action
+                      event_data:
+                        action: "WINDOW_WARNING_SNOOZE_{{ ent }}"
+                      id: snooze
+                    - trigger: event
+                      event_type: mobile_app_notification_action
+                      event_data:
+                        action: "WINDOW_WARNING_PAUSE_{{ ent }}"
+                      id: pause
+                  timeout: "{{ (repeat_interval | float * 60) | int }}"
+                  continue_on_timeout: true
+                - choose:
+                    - conditions: "{{ wait.trigger is not none and wait.trigger.id == 'snooze' }}"
+                      sequence:
+                        - wait_template: "{{ not is_state(ent, 'on') or (states[ent].last_changed | string) != opened_at }}"
+                          timeout: "{{ (snooze_minutes | float * 60) | int }}"
+                          continue_on_timeout: true
+                    - conditions: "{{ wait.trigger is not none and wait.trigger.id == 'pause' }}"
+                      sequence:
+                        - wait_template: "{{ not is_state(ent, 'on') or (states[ent].last_changed | string) != opened_at }}"
+                        - stop: Paused - no reminders until it is closed
+
+      # ------------------------------------------------------------------
+      # Closed: clear the push notification
+      # ------------------------------------------------------------------
+      - alias: Closed
+        conditions:
+          - condition: trigger
+            id: closed
+        sequence:
+          - repeat:
+              for_each: "{{ (push_services + escalation_services) | unique | list }}"
+              sequence:
+                - action: "{{ repeat.item }}"
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "window_warning_{{ (trigger.entity_id | default(trigger.to_state.entity_id)).split('.')[1] }}"
+                  continue_on_error: true
+
+      # ------------------------------------------------------------------
+      # After a restart: resume reminders for windows that are still open
+      # ------------------------------------------------------------------
+      - alias: Restart
+        conditions:
+          - condition: trigger
+            id: restart
+        sequence:
+          - delay: 30
+          - repeat:
+              for_each: "{{ sensors | select('is_state', 'on') | list }}"
+              sequence:
+                - event: window_warning_resume
+                  event_data:
+                    automation: "{{ this.entity_id }}"
+                    entity_id: "{{ repeat.item }}"
+
+      # ------------------------------------------------------------------
+      # Button "Pause all"
+      # ------------------------------------------------------------------
+      - alias: Pause all
+        conditions:
+          - condition: trigger
+            id: pause_all
+          - "{{ mute_switch not in [none, ''] }}"
+        sequence:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: "{{ mute_switch }}"
+
+      # ------------------------------------------------------------------
+      # Immediate alerts: rain/storm, leaving home, unreachable sensor
+      # ------------------------------------------------------------------
+      - alias: Rain or storm
+        conditions:
+          - condition: trigger
+            id: weather
+          - "{{ open_sensors | count > 0 }}"
+        sequence:
+          - variables:
+              reason: "{{ word_storm if trigger.platform == 'numeric_state' else word_rain }}"
+              weather_title: "{{ title_weather | replace('{reason}', reason) | replace('{open}', open_names) }}"
+              weather_text: "{{ text_weather | replace('{reason}', reason) | replace('{open}', open_names) }}"
+              weather_voice: "{{ voice_weather | replace('{reason}', reason) | replace('{open}', open_names) }}"
+              outputs: >-
+                {% set ns = namespace(l=[]) %}
+                {% if alexa_in_room %}{% for o in open_sensors %}{% set b = area_id(o) %}{% if b %}
+                {% set l = area_entities(b) | select('in', alexa_entities) | select('match', 'notify\.') | list %}
+                {% set ns.l = ns.l + (l | select('search', 'sprech|speak') | list if alexa_mode == 'speak' else l | reject('search', 'sprech|speak') | list) %}
+                {% endif %}{% endfor %}{% endif %}
+                {{ (ns.l + extra_outputs) | unique | list }}
+          - parallel:
+              - repeat:
+                  for_each: "{{ push_services }}"
+                  sequence:
+                    - action: "{{ repeat.item }}"
+                      data:
+                        title: "{{ weather_title }}"
+                        message: "{{ weather_text }}"
+                        data:
+                          tag: window_warning_weather
+                          group: window_warning
+                          color: "#1976d2"
+                          notification_icon: mdi:weather-pouring
+                          clickAction: "{{ dashboard_url }}"
+                          url: "{{ dashboard_url }}"
+                          channel: "{{ channel_quiet if quiet_active else channel_normal }}"
+                          push:
+                            interruption-level: "{{ 'passive' if quiet_active else 'time-sensitive' }}"
+                      continue_on_error: true
+              - if:
+                  - "{{ outputs | count > 0 and not quiet_active }}"
+                then:
+                  - action: notify.send_message
+                    target:
+                      entity_id: "{{ outputs }}"
+                    data:
+                      message: "{{ weather_voice }}"
+                    continue_on_error: true
+
+      - alias: Leaving home
+        conditions:
+          - condition: trigger
+            id: leaving
+          - "{{ open_sensors | count > 0 }}"
+        sequence:
+          - repeat:
+              for_each: "{{ push_services }}"
+              sequence:
+                - action: "{{ repeat.item }}"
+                  data:
+                    title: "{{ title_leaving | replace('{open}', open_names) }}"
+                    message: "{{ text_leaving | replace('{open}', open_names) }}"
+                    data:
+                      tag: window_warning_leaving
+                      group: window_warning
+                      color: "#d32f2f"
+                      notification_icon: mdi:home-alert
+                      clickAction: "{{ dashboard_url }}"
+                      url: "{{ dashboard_url }}"
+                      channel: "{{ channel_urgent }}"
+                      push:
+                        interruption-level: time-sensitive
+                  continue_on_error: true
+
+      - alias: Sensor unreachable
+        conditions:
+          - condition: trigger
+            id: offline
+        sequence:
+          - variables:
+              unreachable: "{{ sensors | select('is_state', 'unavailable') | map('state_attr', 'friendly_name') | join(', ') }}"
+          - condition: template
+            value_template: "{{ unreachable != '' }}"
+          - repeat:
+              for_each: "{{ push_services }}"
+              sequence:
+                - action: "{{ repeat.item }}"
+                  data:
+                    title: "{{ title_offline | replace('{unreachable}', unreachable) }}"
+                    message: "{{ text_offline | replace('{unreachable}', unreachable) }}"
+                    data:
+                      tag: window_warning_offline
+                      group: window_warning
+                      color: "#757575"
+                      notification_icon: mdi:wifi-off
+                      channel: "{{ channel_quiet if quiet_active else channel_normal }}"
+                  continue_on_error: true
